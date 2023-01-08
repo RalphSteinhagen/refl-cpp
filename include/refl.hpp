@@ -33,30 +33,8 @@
 #include <ostream>
 #include <sstream>
 #include <iomanip> // std::quoted
-
-#if defined(__APPLE__)
-
 #include <memory>
 #include <complex>
-
-#else
-
-namespace std
-{
-    template <typename T, typename Deleter>
-    class unique_ptr;
-
-    template <typename T>
-    class shared_ptr;
-
-    template <typename T>
-    class weak_ptr;
-
-    template <typename T>
-    class complex;
-} // namespace std
-
-#endif
 
 #ifdef _MSC_VER
 // Disable VS warning for "Not enough arguments for macro"
@@ -702,24 +680,77 @@ namespace refl
 
         namespace detail
         {
-            template <size_t N, typename... Ts>
+
+            template <size_t D, size_t N, typename... Ts>
             struct get;
 
-            template <size_t N>
-            struct get<N>
+            template <size_t D, size_t N>
+            struct get<D, N>
             {
                 static_assert(N > 0, "Missing arguments list for get<N, Ts...>!");
             };
 
             template <size_t N, typename T, typename... Ts>
-            struct get<N, T, Ts...> : public get<N - 1, Ts...>
+            struct get<1, N, T, Ts...> : public get<
+                                             (N > 16 ? (N > 64 ? 64 : 16) : 1),
+                                             N - 1, Ts...>
             {
             };
 
             template <typename T, typename... Ts>
-            struct get<0, T, Ts...>
+            struct get<1, 0, T, Ts...>
             {
                 typedef T type;
+            };
+
+            template <typename T, typename... Ts>
+            struct get<16, 0, T, Ts...>
+            {
+                typedef T type;
+            };
+
+            template <typename T, typename... Ts>
+            struct get<64, 0, T, Ts...>
+            {
+                typedef T type;
+            };
+
+            template <
+                size_t N, typename T0, typename T1, typename T2, typename T3,
+                typename T4, typename T5, typename T6, typename T7, typename T8,
+                typename T9, typename T10, typename T11, typename T12,
+                typename T13, typename T14, typename T15, typename... Ts>
+            struct get<
+                16, N, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12,
+                T13, T14, T15, Ts...> : get<1, N - 16, Ts...>
+            {
+            };
+
+            template <
+                size_t N, typename T0, typename T1, typename T2, typename T3,
+                typename T4, typename T5, typename T6, typename T7, typename T8,
+                typename T9, typename T10, typename T11, typename T12,
+                typename T13, typename T14, typename T15, typename T16,
+                typename T17, typename T18, typename T19, typename T20,
+                typename T21, typename T22, typename T23, typename T24,
+                typename T25, typename T26, typename T27, typename T28,
+                typename T29, typename T30, typename T31, typename T32,
+                typename T33, typename T34, typename T35, typename T36,
+                typename T37, typename T38, typename T39, typename T40,
+                typename T41, typename T42, typename T43, typename T44,
+                typename T45, typename T46, typename T47, typename T48,
+                typename T49, typename T50, typename T51, typename T52,
+                typename T53, typename T54, typename T55, typename T56,
+                typename T57, typename T58, typename T59, typename T60,
+                typename T61, typename T62, typename T63, typename... Ts>
+            struct get<
+                64, N, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12,
+                T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25,
+                T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, T38,
+                T39, T40, T41, T42, T43, T44, T45, T46, T47, T48, T49, T50, T51,
+                T52, T53, T54, T55, T56, T57, T58, T59, T60, T61, T62, T63,
+                Ts...> : get<1, N - 64, Ts...>
+            {
             };
 
             template <size_t N, typename...>
@@ -757,7 +788,7 @@ namespace refl
          * \endcode
          */
         template <size_t N, typename... Ts>
-        struct get<N, type_list<Ts...>> : detail::get<N, Ts...>
+        struct get<N, type_list<Ts...>> : detail::get<1, N, Ts...>
         {
         };
 
@@ -1722,7 +1753,7 @@ namespace refl
             };
 
             template <typename F, typename... Ts>
-            constexpr auto filter(F f, type_list<Ts...>)
+            constexpr auto filter([[maybe_unused]] F f, type_list<Ts...>)
             {
                 return typename apply_mask<type_list<Ts...>, f(Ts{})...>::type{};
             }
@@ -3452,7 +3483,7 @@ namespace refl
                 return true;
             }
             else {
-                constexpr auto match = [](auto m) {
+                [[maybe_unused]] constexpr auto match = [](auto m) {
                     return is_property(m) && is_writable(m) && get_display_name_const(m) == get_display_name_const(ReadableMember{});
                 };
 
@@ -3497,7 +3528,7 @@ namespace refl
                 return true;
             }
             else {
-                constexpr auto match = [](auto m) {
+                [[maybe_unused]] constexpr auto match = [](auto m) {
                     return is_property(m) && is_readable(m) && get_display_name_const(m) == get_display_name_const(WritableMember{});
                 };
 
@@ -4073,30 +4104,34 @@ namespace refl
             static_assert(refl::trait::is_reflectable_v<type>, "Unsupported type!");
             typedef type_descriptor<type> type_descriptor;
 
-            std::optional<U> result;
+            std::conditional_t<std::is_void_v<U>, bool, std::optional<U>> result{};
 
-            bool found{ false };
             for_each(type_descriptor::members, [&](auto member) {
                 using member_t = decltype(member);
-                if (found) return;
+                if (result) return;
 
                 if constexpr (std::is_invocable_r_v<U, decltype(member), T, Args...>) {
                     if constexpr (trait::is_member_v<member_t>) {
                         if (std::strcmp(member.name.c_str(), name) == 0) {
-                            result.emplace(member(target, std::forward<Args>(args)...));
-                            found = true;
+                            if constexpr (std::is_void_v<U>) {
+                                member(target, std::forward<Args>(args)...);
+                                result = true;
+                            }
+                            else {
+                                result.emplace(member(target, std::forward<Args>(args)...));
+                            }
                         }
                     }
                 }
             });
 
-            if (found) {
-                return std::move(*result);
-            }
-            else {
+            if (!result) {
                 throw std::runtime_error(std::string("The member ")
                     + type_descriptor::name.str() + "::" + name
                     + " is not compatible with the provided parameters or return type, is not reflected or does not exist!");
+            }
+            if constexpr (!std::is_void_v<U>) {
+                return std::move(*result);
             }
         }
 
@@ -4360,34 +4395,34 @@ namespace refl::detail
     REFL_END
 
     // Char types.
-    REFL_DETAIL_PRIMITIVE(char);
-    REFL_DETAIL_PRIMITIVE(wchar_t);
-    REFL_DETAIL_PRIMITIVE(char16_t);
-    REFL_DETAIL_PRIMITIVE(char32_t);
+    REFL_DETAIL_PRIMITIVE(char)
+    REFL_DETAIL_PRIMITIVE(wchar_t)
+    REFL_DETAIL_PRIMITIVE(char16_t)
+    REFL_DETAIL_PRIMITIVE(char32_t)
 #ifdef __cpp_lib_char8_t
-    REFL_DETAIL_PRIMITIVE(char8_t);
+    REFL_DETAIL_PRIMITIVE(char8_t)
 #endif
 
     // Integral types.
-    REFL_DETAIL_PRIMITIVE(bool);
-    REFL_DETAIL_PRIMITIVE(signed char);
-    REFL_DETAIL_PRIMITIVE(unsigned char);
-    REFL_DETAIL_PRIMITIVE(signed short);
-    REFL_DETAIL_PRIMITIVE(unsigned short);
-    REFL_DETAIL_PRIMITIVE(signed int);
-    REFL_DETAIL_PRIMITIVE(unsigned int);
-    REFL_DETAIL_PRIMITIVE(signed long);
-    REFL_DETAIL_PRIMITIVE(unsigned long);
-    REFL_DETAIL_PRIMITIVE(signed long long);
-    REFL_DETAIL_PRIMITIVE(unsigned long long);
+    REFL_DETAIL_PRIMITIVE(bool)
+    REFL_DETAIL_PRIMITIVE(signed char)
+    REFL_DETAIL_PRIMITIVE(unsigned char)
+    REFL_DETAIL_PRIMITIVE(signed short)
+    REFL_DETAIL_PRIMITIVE(unsigned short)
+    REFL_DETAIL_PRIMITIVE(signed int)
+    REFL_DETAIL_PRIMITIVE(unsigned int)
+    REFL_DETAIL_PRIMITIVE(signed long)
+    REFL_DETAIL_PRIMITIVE(unsigned long)
+    REFL_DETAIL_PRIMITIVE(signed long long)
+    REFL_DETAIL_PRIMITIVE(unsigned long long)
 
     // Floating point types.
-    REFL_DETAIL_PRIMITIVE(float);
-    REFL_DETAIL_PRIMITIVE(double);
-    REFL_DETAIL_PRIMITIVE(long double);
+    REFL_DETAIL_PRIMITIVE(float)
+    REFL_DETAIL_PRIMITIVE(double)
+    REFL_DETAIL_PRIMITIVE(long double)
 
     // Other types.
-    REFL_DETAIL_PRIMITIVE(decltype(nullptr));
+    REFL_DETAIL_PRIMITIVE(decltype(nullptr))
 
     // Void type.
     REFL_TYPE(void)
